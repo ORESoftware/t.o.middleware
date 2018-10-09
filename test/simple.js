@@ -8,4 +8,12 @@ const assert  = require('assert');
 const EE  = require('events');
 const strm = require('stream');
 
-console.log('your simple node.js test goes here.');
+
+
+const to = setTimeout(() => {
+  
+  console.log(to._called);
+  
+}, 10);
+
+console.log(to._called);

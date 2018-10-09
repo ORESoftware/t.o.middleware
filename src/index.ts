@@ -1,16 +1,12 @@
 'use strict';
 
-
-
 import Timer = NodeJS.Timer;
+import {RequestHandler, Request, Response} from "express";
 
 export const r2gSmokeTest = function () {
   // r2g command line app uses this exported function
   return true;
 };
-
-
-import {RequestHandler, Request} from "express";
 
 export interface TimeOutMiddlewareOpts {
   ms: number,
@@ -19,41 +15,66 @@ export interface TimeOutMiddlewareOpts {
 
 interface TimeoutInfo {
   millisCreatedAt: number,
-  timeout: Timer
+  timeout: Timer,
+  amount: number
 }
 
 const container = {
-   requestToInfo: new Map<Request, TimeoutInfo>()
+  requestToInfo: new Map<Request, TimeoutInfo>(),
 };
 
-export const timeoutmw = (v: TimeOutMiddlewareOpts) : RequestHandler => {
+const clearReqTimeout = (req: Request) => {
+  return () => {
+    const info = container.requestToInfo.get(req);
+    if (info) {
+      clearTimeout(info.timeout);
+      container.requestToInfo.delete(req);
+    }
+  }
+};
 
+export type TimeoutCallback = (req: Request, res: Response) => void;
+
+export const timeoutmw = (v: TimeOutMiddlewareOpts, fn: TimeoutCallback): RequestHandler => {
+
+  if (!Number.isInteger(v.ms)) {
+    throw new Error('Bad options - "ms" must be an integer representing milliseconds timeout.');
+  }
+
+  if (typeof fn !== 'function') {
+    throw new Error('Bad argument - must be a function.');
+  }
 
   return (req, res, next) => {
 
     const info = container.requestToInfo.get(req);
 
-    if(!info){
-
-      const to = setTimeout(() => {
-         res.json({error: new Error('time out.')});
-      }, v.ms);
-
-      container.requestToInfo.set(req, {timeout: to, millisCreatedAt: Date.now()});
+    if (!info) {
+      const to = setTimeout(fn, v.ms);
+      container.requestToInfo.set(req, {timeout: to, amount: v.ms, millisCreatedAt: Date.now()});
+      res.once('finish', clearReqTimeout(req));
       return next();
     }
 
-    const now = Date.now();
+    if ((<any>info.timeout)._called === true) {
+      // previous timeout has already been called
+      return next();
+    }
 
+    if (v.ms > (info.amount - (Date.now() - info.millisCreatedAt))) {
+      // the previously created timeout will happen earlier, so we ignore this timeout
+      return next();
+    }
 
+    clearTimeout(info.timeout);
+    const to = setTimeout(fn, v.ms);
+    res.once('finish', clearReqTimeout(req));
+    container.requestToInfo.set(req, {timeout: to, amount: v.ms, millisCreatedAt: Date.now()});
+    next();
 
   };
 
-
 };
-
-
-
 
 export default timeoutmw;
 
