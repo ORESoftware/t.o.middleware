@@ -35,14 +35,16 @@ const clearReqTimeout = (req: Request) => {
 
 export type TimeoutCallback = (req: Request, res: Response) => void;
 
-export const timeoutmw = (v: TimeOutMiddlewareOpts, fn: TimeoutCallback): RequestHandler => {
-
-  if (!Number.isInteger(v.ms)) {
-    throw new Error('Bad options - "ms" must be an integer representing milliseconds timeout.');
-  }
+export const timeoutmw = (v: number | TimeOutMiddlewareOpts, fn: TimeoutCallback): RequestHandler => {
 
   if (typeof fn !== 'function') {
     throw new Error('Bad argument - must be a function.');
+  }
+
+  const ms: number = (v as any).ms || v;
+
+  if (!Number.isInteger(ms)) {
+    throw new Error('Bad options - "ms" must be an integer representing milliseconds timeout.');
   }
 
   return (req, res, next) => {
@@ -50,8 +52,8 @@ export const timeoutmw = (v: TimeOutMiddlewareOpts, fn: TimeoutCallback): Reques
     const info = container.requestToInfo.get(req);
 
     if (!info) {
-      const to = setTimeout(fn, v.ms);
-      container.requestToInfo.set(req, {timeout: to, amount: v.ms, millisCreatedAt: Date.now()});
+      const to = setTimeout(fn, ms);
+      container.requestToInfo.set(req, {timeout: to, amount: ms, millisCreatedAt: Date.now()});
       res.once('finish', clearReqTimeout(req));
       return next();
     }
@@ -61,15 +63,15 @@ export const timeoutmw = (v: TimeOutMiddlewareOpts, fn: TimeoutCallback): Reques
       return next();
     }
 
-    if (v.ms > (info.amount - (Date.now() - info.millisCreatedAt))) {
+    if (ms > (info.amount - (Date.now() - info.millisCreatedAt))) {
       // the previously created timeout will happen earlier, so we ignore this timeout
       return next();
     }
 
     clearTimeout(info.timeout);
-    const to = setTimeout(fn, v.ms);
+    const to = setTimeout(fn, ms);
     res.once('finish', clearReqTimeout(req));
-    container.requestToInfo.set(req, {timeout: to, amount: v.ms, millisCreatedAt: Date.now()});
+    container.requestToInfo.set(req, {timeout: to, amount: ms, millisCreatedAt: Date.now()});
     next();
 
   };
